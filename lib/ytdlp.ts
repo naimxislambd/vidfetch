@@ -73,6 +73,24 @@ const YT_FALLBACK_ARGS = ["--extractor-args", "youtube:player_client=android"];
 export const LIMITED_QUALITY_NOTE =
   "YouTube is restricting this network, so quality is capped at 360p here. For full quality, enable Private mode and paste your YouTube login cookies.";
 
+/**
+ * Site-owner cookies (a spare/burner account) from the SITE_YOUTUBE_COOKIES
+ * env var, used as a fallback so visitors can download YouTube links without
+ * pasting their own cookies. Only ever applies to YouTube — never to
+ * Facebook/X/TikTok, where the visitor's own session is what matters
+ * (private videos must always use the visitor's own cookies).
+ * Precedence: visitor cookies > site cookies > none.
+ */
+export function siteCookiesFor(
+  url: string,
+  visitorCookies?: string
+): string | undefined {
+  if (visitorCookies && visitorCookies.trim()) return visitorCookies;
+  const site = process.env.SITE_YOUTUBE_COOKIES;
+  if (site && site.trim() && isYouTube(url)) return site;
+  return undefined;
+}
+
 function stderrTail(stderr: string): string {
   const errs = stderr
     .split("\n")

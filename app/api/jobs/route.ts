@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { validateUrl, createJob, type QualityKey } from "@/lib/ytdlp";
+import {
+  validateUrl,
+  createJob,
+  siteCookiesFor,
+  type QualityKey,
+} from "@/lib/ytdlp";
 
 const QUALITIES: QualityKey[] = ["best", "q1080", "q720", "q480", "audio"];
 
@@ -10,8 +15,10 @@ export async function POST(req: NextRequest) {
     const quality: QualityKey = QUALITIES.includes(body?.quality)
       ? body.quality
       : "best";
-    const cookies =
-      typeof body?.cookies === "string" ? body.cookies : undefined;
+    const cookies = siteCookiesFor(
+      url,
+      typeof body?.cookies === "string" ? body.cookies : undefined
+    );
     const job = createJob(url, quality, cookies);
     return NextResponse.json({ ok: true, jobId: job.id });
   } catch (e: any) {

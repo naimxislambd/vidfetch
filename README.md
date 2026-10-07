@@ -66,6 +66,33 @@ can already watch. Only download videos you have the right to save.
 Same trick fixes YouTube's *"sign in to confirm you're not a bot"* error —
 export cookies while logged into YouTube and paste them in Private mode.
 
+## Cookie-free YouTube for visitors (optional, recommended)
+
+YouTube blocks datacenter IPs, so visitors would otherwise hit login walls.
+You can give the server its own YouTube session — then visitors just paste
+links and everything works:
+
+1. Create a **spare Google account** (do NOT use your main account).
+2. Log into YouTube with it in your browser.
+3. Export its cookies with the **"Get cookies.txt LOCALLY"** extension.
+4. In Render: open your `vidfetch` service → **Environment** → add variable
+   `SITE_YOUTUBE_COOKIES` → paste the cookies → **Save** (this redeploys).
+5. Done — the server now uses that session as a fallback whenever a visitor
+   pastes a YouTube link without their own cookies.
+
+Honest trade-offs, read before doing this:
+
+- YouTube may **rate-limit or ban** the spare account if the site gets busy.
+  It's a burner — that's the point.
+- Cookies **expire** (typically every few months). When YouTube downloads
+  start failing again, re-export and update the variable.
+- This is **against YouTube's Terms of Service**. Fine for personal/low-key
+  use; don't be surprised if Google fights back.
+- Never paste these cookies into any chat or public place — only into
+  Render's Environment settings, which are encrypted.
+- Private Facebook videos ALWAYS need each visitor's own cookies — the
+  server session is only ever used for YouTube, never for Facebook/X/TikTok.
+
 ## API
 
 | Endpoint | Method | Description |

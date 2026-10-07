@@ -352,8 +352,9 @@ export default function Home() {
         <details open>
           <summary>Is it really free? Do I need an account?</summary>
           <p>
-            Yes — 100% free, no signup, no credits, no watermarks. Just paste a
-            link and download.
+            Yes — 100% free, no signup, no credits, no watermarks. Just paste
+            a link and download. Private Facebook videos are the only case
+            that needs your own login cookies (Private mode above).
           </p>
         </details>
         <details>
