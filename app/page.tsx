@@ -11,18 +11,18 @@ interface VideoInfo {
   limited?: boolean;
 }
 
-const LIMITED_MSG =
-  "YouTube is restricting this network, so quality is capped at 360p here. For full quality, enable Private mode and paste your YouTube login cookies.";
-
 type QualityKey = "best" | "q1080" | "q720" | "q480" | "audio";
 
 const QUALITIES: { key: QualityKey; label: string; sub: string }[] = [
-  { key: "best", label: "Best", sub: "Highest quality" },
-  { key: "q1080", label: "1080p", sub: "Full HD" },
-  { key: "q720", label: "720p", sub: "HD · smaller" },
-  { key: "q480", label: "480p", sub: "Small file" },
+  { key: "best", label: "MP4 · Best", sub: "Highest quality" },
+  { key: "q1080", label: "MP4 · 1080p", sub: "Full HD" },
+  { key: "q720", label: "MP4 · 720p", sub: "HD · smaller file" },
+  { key: "q480", label: "MP4 · 480p", sub: "Small file" },
   { key: "audio", label: "MP3", sub: "Audio only" },
 ];
+
+const LIMITED_MSG =
+  "YouTube is restricting this network, so quality is capped at 360p here. For full quality, enable Private mode and paste your YouTube login cookies.";
 
 const PLATFORMS = [
   { name: "YouTube", color: "#ff4d4d", hint: "Videos & Shorts" },
@@ -36,7 +36,11 @@ function formatDuration(s: number | null): string {
   const m = Math.floor(s / 60);
   const sec = Math.floor(s % 60);
   const h = Math.floor(m / 60);
-  if (h > 0) return `${h}:${String(m % 60).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+  if (h > 0)
+    return `${h}:${String(m % 60).padStart(2, "0")}:${String(sec).padStart(
+      2,
+      "0"
+    )}`;
   return `${m}:${String(sec).padStart(2, "0")}`;
 }
 
@@ -55,9 +59,9 @@ export default function Home() {
   const [cookies, setCookies] = useState("");
   const [busy, setBusy] = useState(false);
   const [info, setInfo] = useState<VideoInfo | null>(null);
-  const [quality, setQuality] = useState<QualityKey>("best");
-  const [error, setError] = useState("");
   const [note, setNote] = useState("");
+  const [error, setError] = useState("");
+  const [dlQuality, setDlQuality] = useState<QualityKey | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
   const [done, setDone] = useState(false);
   const esRef = useRef<EventSource | null>(null);
@@ -66,14 +70,16 @@ export default function Home() {
 
   const platform = detectPlatform(url);
 
-  async function fetchInfo() {
+  async function fetchInfo(target?: string) {
+    const link = (target ?? url).trim();
     setError("");
     setNote("");
     setInfo(null);
     setDone(false);
     setProgress(null);
+    setDlQuality(null);
     esRef.current?.close();
-    if (!url.trim()) {
+    if (!link) {
       setError("Paste a video link first.");
       return;
     }
@@ -83,7 +89,7 @@ export default function Home() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          url: url.trim(),
+          url: link,
           cookies: privateMode ? cookies : "",
         }),
       });
@@ -98,17 +104,27 @@ export default function Home() {
     }
   }
 
-  function startDownload() {
+  function handlePaste(e: React.ClipboardEvent<HTMLInputElement>) {
+    const text = e.clipboardData.getData("text");
+    if (text && text.trim()) {
+      setUrl(text.trim());
+      fetchInfo(text.trim());
+    }
+  }
+
+  function startDownload(q: QualityKey) {
+    if (!info) return;
     setError("");
     setDone(false);
     setProgress(0);
+    setDlQuality(q);
     esRef.current?.close();
     fetch("/api/jobs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         url: url.trim(),
-        quality,
+        quality: q,
         cookies: privateMode ? cookies : "",
       }),
     })
@@ -125,25 +141,29 @@ export default function Home() {
             es.close();
             setProgress(100);
             setDone(true);
-            // Trigger the browser's file save dialog.
             window.location.href = `/api/jobs/${j.jobId}/file`;
           } else if (d.status === "error") {
             es.close();
             setProgress(null);
+            setDlQuality(null);
             setError(d.error || "Download failed.");
           }
         };
         es.onerror = () => {
           es.close();
           setProgress(null);
+          setDlQuality(null);
           setError("Lost connection to the download. Please try again.");
         };
       })
       .catch((e: any) => {
         setProgress(null);
+        setDlQuality(null);
         setError(e.message || "Something went wrong.");
       });
   }
+
+  const downloading = progress !== null && !done;
 
   return (
     <div className="wrap">
@@ -151,8 +171,10 @@ export default function Home() {
         <div className="logo">⬇️</div>
         <h1>VidFetch</h1>
         <p>
-          Free downloader for long videos &amp; reels from YouTube, Facebook, X
-          and TikTok — including private &amp; group Facebook videos.
+          <b>Free. No signup. Download now.</b>
+          <br />
+          YouTube, Facebook, X and TikTok videos &amp; reels — including
+          private &amp; group Facebook videos.
         </p>
         <div className="platforms">
           {PLATFORMS.map((p) => (
@@ -164,37 +186,32 @@ export default function Home() {
         </div>
       </header>
 
-      {/* STEP 1 */}
+      {/* INPUT */}
       <section className="card">
-        <h2>
-          <span className="step">1</span>Paste the video link
-          {platform && (
-            <span
-              className="chip"
-              style={{ marginLeft: 10, verticalAlign: "middle" }}
-            >
-              {platform} detected
-            </span>
-          )}
-        </h2>
         <div className="url-row">
           <input
             type="text"
-            placeholder="Paste a YouTube, Facebook, X or TikTok video / reel link…"
+            placeholder="Paste a video link here…"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
+            onPaste={handlePaste}
             onKeyDown={(e) => e.key === "Enter" && fetchInfo()}
           />
-          <button className="btn" onClick={fetchInfo} disabled={busy}>
+          <button className="btn" onClick={() => fetchInfo()} disabled={busy}>
             {busy ? (
               <>
-                <span className="spinner" /> Fetching…
+                <span className="spinner" /> Loading…
               </>
             ) : (
-              "Fetch"
+              "Download"
             )}
           </button>
         </div>
+        {platform && !info && (
+          <div style={{ marginTop: 10 }}>
+            <span className="chip">{platform} link detected</span>
+          </div>
+        )}
 
         <label className="private-toggle">
           <input
@@ -202,21 +219,18 @@ export default function Home() {
             checked={privateMode}
             onChange={(e) => setPrivateMode(e.target.checked)}
           />
-          🔒 Private / group video mode (Facebook private videos, members-only
-          groups, login-walled videos)
+          🔒 Private / group video mode (needs your login cookies)
         </label>
 
         {privateMode && (
           <div className="private-box">
             <p>
-              Private videos need <b>your own login cookies</b> — the site
-              downloads them through your session, so you can only fetch videos
-              you can already watch. Cookies are kept in temporary server
-              memory for this one download and deleted right after. Nothing is
-              stored.
+              Private videos download through <b>your own session</b> — paste
+              your login cookies below. Used for this one download only, then
+              deleted. Nothing is stored.
             </p>
             <textarea
-              placeholder={"Paste your cookies here (Netscape cookies.txt format)…"}
+              placeholder="Paste your cookies here (Netscape cookies.txt format)…"
               value={cookies}
               onChange={(e) => setCookies(e.target.value)}
               spellCheck={false}
@@ -229,19 +243,14 @@ export default function Home() {
                   extension (Chrome / Edge / Firefox).
                 </li>
                 <li>
-                  Log in to <b>facebook.com</b> in that browser and open the
-                  video page.
+                  Log in to <b>facebook.com</b> (or <b>youtube.com</b>) and
+                  open the video page.
                 </li>
                 <li>
                   Click the extension icon → <b>Export</b> → copy everything.
                 </li>
-                <li>Paste it in the box above, then press Fetch.</li>
+                <li>Paste it above, then press Download.</li>
               </ol>
-              <p style={{ marginTop: 8 }}>
-                Same trick fixes YouTube&apos;s “sign in to confirm you&apos;re
-                not a bot” error — export cookies while logged in to YouTube
-                and paste them here.
-              </p>
             </details>
           </div>
         )}
@@ -249,16 +258,17 @@ export default function Home() {
         {error && <div className="error">⚠️ {error}</div>}
       </section>
 
-      {/* STEP 2 */}
+      {/* RESULT */}
       {info && (
         <section className="card">
-          <h2>
-            <span className="step">2</span>Choose quality &amp; download
-          </h2>
           <div className="result">
             {info.thumbnail && (
               // eslint-disable-next-line @next/next/no-img-element
-              <img className="thumb" src={info.thumbnail} alt="Video thumbnail" />
+              <img
+                className="thumb"
+                src={info.thumbnail}
+                alt="Video thumbnail"
+              />
             )}
             <div className="result-info">
               <h3>{info.title}</h3>
@@ -269,49 +279,39 @@ export default function Home() {
               </div>
               {note && <div className="note">⚠️ {note}</div>}
               <div className="qualities">
-                {QUALITIES.map((q) => (
-                  <button
-                    key={q.key}
-                    className={`qbtn ${quality === q.key ? "active" : ""}`}
-                    onClick={() => setQuality(q.key)}
-                  >
-                    {q.label}
-                    <small>{q.sub}</small>
-                  </button>
-                ))}
+                {QUALITIES.map((q) => {
+                  const active = dlQuality === q.key && downloading;
+                  return (
+                    <button
+                      key={q.key}
+                      className={`qbtn ${active ? "active" : ""}`}
+                      onClick={() => startDownload(q.key)}
+                      disabled={downloading}
+                    >
+                      {active ? (
+                        <>
+                          <span className="spinner" /> {progress}%
+                        </>
+                      ) : (
+                        <>⬇ {q.label}</>
+                      )}
+                      <small>{q.sub}</small>
+                    </button>
+                  );
+                })}
               </div>
-              <button
-                className="btn"
-                onClick={startDownload}
-                disabled={progress !== null && !done}
-              >
-                {progress !== null && !done ? (
-                  <>
-                    <span className="spinner" /> Downloading…
-                  </>
-                ) : done ? (
-                  "Download again"
-                ) : (
-                  "⬇ Download"
-                )}
-              </button>
 
-              {progress !== null && (
-                <div className="progress-wrap" style={{ marginTop: 16 }}>
-                  <div className="progress-top">
-                    <span>
-                      {done ? "Complete" : `Downloading… ${progress}%`}
-                    </span>
-                  </div>
+              {downloading && (
+                <div className="progress-wrap">
                   <div className="bar">
                     <div style={{ width: `${progress}%` }} />
                   </div>
-                  {done && (
-                    <div className="done-note">
-                      ✅ Done! Your file should be saving now — check your
-                      downloads folder.
-                    </div>
-                  )}
+                </div>
+              )}
+              {done && (
+                <div className="done-note">
+                  ✅ Done! Your file should be saving now — check your
+                  downloads folder.
                 </div>
               )}
             </div>
@@ -326,22 +326,33 @@ export default function Home() {
           <div className="feat">
             <div className="icon">🎬</div>
             <b>Long videos</b>
-            <span>Full-length YouTube videos, Facebook watch videos, X &amp; TikTok uploads.</span>
+            <span>
+              Full-length YouTube videos, Facebook watch videos, X &amp;
+              TikTok uploads.
+            </span>
           </div>
           <div className="feat">
             <div className="icon">📱</div>
             <b>Reels &amp; Shorts</b>
-            <span>Facebook reels, YouTube Shorts, TikTok clips — paste the link, same flow.</span>
+            <span>
+              Facebook reels, YouTube Shorts, TikTok clips — paste the link,
+              same flow.
+            </span>
           </div>
           <div className="feat">
             <div className="icon">🔒</div>
             <b>Private &amp; group videos</b>
-            <span>Members-only Facebook groups and private videos, via your own login cookies.</span>
+            <span>
+              Members-only Facebook groups and private videos, via your own
+              login cookies.
+            </span>
           </div>
           <div className="feat">
             <div className="icon">🎵</div>
             <b>MP3 audio</b>
-            <span>Extract just the audio from any supported video in one click.</span>
+            <span>
+              Extract just the audio from any supported video in one click.
+            </span>
           </div>
         </div>
       </section>
@@ -361,25 +372,26 @@ export default function Home() {
           <summary>How do private / group Facebook videos work?</summary>
           <p>
             Turn on <b>Private mode</b> and paste your Facebook login cookies
-            (see the how-to above). The download runs through your own session,
-            so it can fetch anything you&apos;re already able to watch —
-            including private videos and videos in groups you&apos;ve joined.
-            Only download videos you have the right to save.
+            (see the how-to above). The download runs through your own
+            session, so it can fetch anything you&apos;re already able to
+            watch. Only download videos you have the right to save.
           </p>
         </details>
         <details>
           <summary>YouTube says “sign in to confirm you’re not a bot”</summary>
           <p>
-            YouTube aggressively blocks datacenter IPs. The fix: export your
-            YouTube cookies while logged in (same “Get cookies.txt LOCALLY”
-            extension), enable Private mode, paste them, and retry.
+            YouTube blocks many server IPs. If the site owner has added the
+            server&apos;s own YouTube session, you&apos;ll never see this —
+            otherwise, export your YouTube cookies while logged in (same
+            “Get cookies.txt LOCALLY” extension), enable Private mode, paste
+            them, and retry.
           </p>
         </details>
         <details>
           <summary>Where do my files and cookies go?</summary>
           <p>
-            Downloads are processed on the server and streamed straight to your
-            browser. Cookies live only in a temporary file for that one
+            Downloads are processed on the server and streamed straight to
+            your browser. Cookies live only in a temporary file for that one
             download and are deleted immediately after. Files auto-delete from
             the server after 30 minutes.
           </p>
