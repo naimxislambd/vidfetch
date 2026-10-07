@@ -3,6 +3,11 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
+import {
+  isTikTokUrl,
+  getTikTokInfo,
+  downloadTikTokDirect,
+} from "./tikwm";
 
 const YTDLP = process.env.YTDLP_BIN || "yt-dlp";
 
@@ -56,6 +61,8 @@ export interface VideoInfo {
   limited?: boolean;
   /** Approx bytes per quality tier, when the extractor reports them */
   sizes?: Partial<Record<QualityKey, number>>;
+  /** When set, the UI offers only these qualities (e.g. TikTok direct path) */
+  qualities?: QualityKey[];
 }
 
 /** Approx download size per quality tier from the extractor's format list. */
@@ -202,6 +209,14 @@ export async function getVideoInfo(
   url: string,
   cookieFile?: string
 ): Promise<VideoInfo> {
+  // TikTok: cookie-free API first (fast, no login); yt-dlp as fallback.
+  if (isTikTokUrl(url) && !cookieFile) {
+    try {
+      return await getTikTokInfo(url);
+    } catch {
+      // fall through to yt-dlp below
+    }
+  }
   const base = [
     "--no-playlist",
     "--no-warnings",
@@ -309,6 +324,18 @@ async function runJob(
     if (cookiesText && cookiesText.trim())
       cookieFile = await writeCookies(cookiesText);
 
+    // TikTok cookie-free path: direct download via lookup API (no login).
+    // Falls back to yt-dlp below when it fails.
+    if (isTikTokUrl(url) && !cookieFile) {
+      try {
+        await downloadTikTokDirect(job, url, quality);
+        await finalizeJob(job);
+        return;
+      } catch {
+        // fall through to yt-dlp
+      }
+    }
+
     const baseArgs = [
       "--no-playlist",
       "--no-warnings",
@@ -349,23 +376,7 @@ async function runJob(
     }
     if (!downloaded) throw new Error(lastErr);
 
-    const files = (await fs.readdir(job.dir)).filter((f) => !f.startsWith("."));
-    if (!files.length)
-      throw new Error("Download finished but no file was created.");
-    let best = files[0];
-    let bestSize = -1;
-    for (const f of files) {
-      const s = (await fs.stat(path.join(job.dir, f))).size;
-      if (s > bestSize) {
-        bestSize = s;
-        best = f;
-      }
-    }
-    job.filepath = path.join(job.dir, best);
-    job.filename = best;
-    job.title = best.replace(/\.[^.]+$/, "");
-    job.progress = 100;
-    job.status = "done";
+    await finalizeJob(job);
   } catch (e: any) {
     job.status = "error";
     job.error = friendlyError(e?.message || "failed");
@@ -373,6 +384,27 @@ async function runJob(
     // Cookies live only for the duration of this download.
     if (cookieFile) await fs.unlink(cookieFile).catch(() => {});
   }
+}
+
+/** Mark the biggest file in the job dir as the finished download. */
+async function finalizeJob(job: Job): Promise<void> {
+  const files = (await fs.readdir(job.dir)).filter((f) => !f.startsWith("."));
+  if (!files.length)
+    throw new Error("Download finished but no file was created.");
+  let best = files[0];
+  let bestSize = -1;
+  for (const f of files) {
+    const s = (await fs.stat(path.join(job.dir, f))).size;
+    if (s > bestSize) {
+      bestSize = s;
+      best = f;
+    }
+  }
+  job.filepath = path.join(job.dir, best);
+  job.filename = best;
+  job.title = best.replace(/\.[^.]+$/, "");
+  job.progress = 100;
+  job.status = "done";
 }
 
 /** Spawn one yt-dlp download attempt, tracking progress on the job. */

@@ -10,6 +10,7 @@ interface VideoInfo {
   webpageUrl: string;
   limited?: boolean;
   sizes?: Partial<Record<QualityKey, number>>;
+  qualities?: QualityKey[];
 }
 
 type QualityKey = "best" | "q1080" | "q720" | "q480" | "audio";
@@ -190,6 +191,13 @@ export default function Home() {
 
   const downloading = progress !== null && !done;
 
+  // The API may restrict the offered qualities (e.g. TikTok direct path).
+  const offered = info?.qualities;
+  const fastRows = FAST_ROWS.filter(
+    (q) => !offered || offered.includes(q.key)
+  );
+  const hdRows = HD_ROWS.filter((q) => !offered || offered.includes(q.key));
+
   function qualityRow(
     q: { key: QualityKey; label: string },
     tone: "fast" | "hd"
@@ -352,11 +360,19 @@ export default function Home() {
 
             {note && <div className="note">⚠️ {note}</div>}
 
-            <h3 className="sect">Fast Download</h3>
-            {FAST_ROWS.map((q) => qualityRow(q, "fast"))}
+            {fastRows.length > 0 && (
+              <>
+                <h3 className="sect">Fast Download</h3>
+                {fastRows.map((q) => qualityRow(q, "fast"))}
+              </>
+            )}
 
-            <h3 className="sect">HD Downloads</h3>
-            {HD_ROWS.map((q) => qualityRow(q, "hd"))}
+            {hdRows.length > 0 && (
+              <>
+                <h3 className="sect">HD Downloads</h3>
+                {hdRows.map((q) => qualityRow(q, "hd"))}
+              </>
+            )}
 
             {downloading && (
               <div className="bar">

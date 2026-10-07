@@ -111,7 +111,11 @@ Facebook, X and TikTok URLs are accepted (SSRF protection).
   retries blocked YouTube links with a fallback client (quality capped at
   ~360p on restricted networks, with an on-screen note). For full quality,
   add your own YouTube cookies in Private mode — on a normal residential
-  connection you usually won't need them at all.
+  connection you usually won't need them at all. Optional: set the
+  `SITE_YOUTUBE_COOKIES` env var (see above) so visitors never need cookies.
+- **TikTok** is also IP-blocked for yt-dlp on servers, so VidFetch uses a
+  free third-party lookup API as a cookie-free fallback (tried before
+  yt-dlp). No login needed.
 - **Private videos** always need your own cookies — there is no way to fetch
   a video you can't watch yourself, and that's intentional.
 - Platforms change their front-ends often; if a site breaks, updating yt-dlp
