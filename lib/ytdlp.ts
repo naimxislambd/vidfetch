@@ -104,6 +104,8 @@ export function friendlyError(raw: string): string {
   const m = raw.toLowerCase();
   if (/spawn failed|not found|enoent/.test(m))
     return "The video engine (yt-dlp) is not installed on the server.";
+  if (/page needs to be reloaded/.test(m))
+    return "Your login cookies seem expired or invalid. Export fresh cookies and try again.";
   if (/private video|login|log in|sign in|cookies|confirm you're not a bot|bot/.test(m))
     return "This video needs login. Turn on Private mode, paste your login cookies, and try again.";
   if (/unavailable|removed|deleted|404|not available/.test(m))
