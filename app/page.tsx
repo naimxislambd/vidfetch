@@ -9,26 +9,30 @@ interface VideoInfo {
   thumbnail: string | null;
   webpageUrl: string;
   limited?: boolean;
+  sizes?: Partial<Record<QualityKey, number>>;
 }
 
 type QualityKey = "best" | "q1080" | "q720" | "q480" | "audio";
 
-const QUALITIES: { key: QualityKey; label: string; sub: string }[] = [
-  { key: "best", label: "MP4 · Best", sub: "Highest quality" },
-  { key: "q1080", label: "MP4 · 1080p", sub: "Full HD" },
-  { key: "q720", label: "MP4 · 720p", sub: "HD · smaller file" },
-  { key: "q480", label: "MP4 · 480p", sub: "Small file" },
-  { key: "audio", label: "MP3", sub: "Audio only" },
+const FAST_ROWS: { key: QualityKey; label: string }[] = [
+  { key: "q480", label: "480p MP4" },
+  { key: "audio", label: "Audio MP3" },
+];
+
+const HD_ROWS: { key: QualityKey; label: string }[] = [
+  { key: "best", label: "Best quality MP4" },
+  { key: "q1080", label: "1080p MP4" },
+  { key: "q720", label: "720p MP4" },
 ];
 
 const LIMITED_MSG =
   "YouTube is restricting this network, so quality is capped at 360p here. For full quality, enable Private mode and paste your YouTube login cookies.";
 
 const PLATFORMS = [
-  { name: "YouTube", color: "#ff4d4d", hint: "Videos & Shorts" },
-  { name: "Facebook", color: "#4d8dff", hint: "Videos, reels, private & group" },
-  { name: "X", color: "#e7e9ea", hint: "Videos" },
-  { name: "TikTok", color: "#25f4ee", hint: "Videos" },
+  { name: "YouTube", color: "#ff4d4d" },
+  { name: "Facebook", color: "#4d8dff" },
+  { name: "X", color: "#94a3b8" },
+  { name: "TikTok", color: "#0d9488" },
 ];
 
 function formatDuration(s: number | null): string {
@@ -42,6 +46,12 @@ function formatDuration(s: number | null): string {
       "0"
     )}`;
   return `${m}:${String(sec).padStart(2, "0")}`;
+}
+
+function fmtSize(bytes?: number): string {
+  if (!bytes) return "";
+  const mb = bytes / 1048576;
+  return mb >= 1024 ? `~${(mb / 1024).toFixed(1)} GB` : `~${Math.max(1, Math.round(mb))} MB`;
 }
 
 function detectPlatform(url: string): string | null {
@@ -65,6 +75,7 @@ export default function Home() {
   const [progress, setProgress] = useState<number | null>(null);
   const [done, setDone] = useState(false);
   const esRef = useRef<EventSource | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => () => esRef.current?.close(), []);
 
@@ -110,6 +121,20 @@ export default function Home() {
       setUrl(text.trim());
       fetchInfo(text.trim());
     }
+  }
+
+  async function pasteFromClipboard() {
+    try {
+      const t = await navigator.clipboard.readText();
+      if (t && t.trim()) {
+        setUrl(t.trim());
+        fetchInfo(t.trim());
+        return;
+      }
+    } catch {
+      /* clipboard blocked — fall through to focus */
+    }
+    inputRef.current?.focus();
   }
 
   function startDownload(q: QualityKey) {
@@ -165,245 +190,336 @@ export default function Home() {
 
   const downloading = progress !== null && !done;
 
+  function qualityRow(
+    q: { key: QualityKey; label: string },
+    tone: "fast" | "hd"
+  ) {
+    const active = dlQuality === q.key && downloading;
+    const size = fmtSize(info?.sizes?.[q.key]);
+    return (
+      <div key={q.key} className={`qrow ${tone}`}>
+        <div className="qrow-info">
+          <b>{q.label}</b>
+          {size && <span>{size}</span>}
+        </div>
+        <button
+          className="dl-btn"
+          onClick={() => startDownload(q.key)}
+          disabled={downloading}
+        >
+          {active ? (
+            <>
+              <span className="spinner" /> {progress}%
+            </>
+          ) : (
+            "⬇ Download"
+          )}
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <div className="wrap">
-      <header className="hero">
-        <div className="logo">⬇️</div>
-        <h1>VidFetch</h1>
-        <p>
-          <b>Free. No signup. Download now.</b>
-          <br />
-          YouTube, Facebook, X and TikTok videos &amp; reels — including
-          private &amp; group Facebook videos.
-        </p>
-        <div className="platforms">
-          {PLATFORMS.map((p) => (
-            <span key={p.name} className="chip" title={p.hint}>
-              <span className="dot" style={{ background: p.color }} />
-              {p.name}
-            </span>
-          ))}
+    <>
+      <header className="topbar">
+        <div className="topbar-inner">
+          <div className="brand">
+            <span className="brand-mark">⬇</span> VidFetch
+          </div>
+          <span className="free-pill">100% Free</span>
         </div>
       </header>
 
-      {/* INPUT */}
-      <section className="card">
-        <div className="url-row">
-          <input
-            type="text"
-            placeholder="Paste a video link here…"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            onPaste={handlePaste}
-            onKeyDown={(e) => e.key === "Enter" && fetchInfo()}
-          />
-          <button className="btn" onClick={() => fetchInfo()} disabled={busy}>
-            {busy ? (
-              <>
-                <span className="spinner" /> Loading…
-              </>
-            ) : (
-              "Download"
-            )}
-          </button>
-        </div>
-        {platform && !info && (
-          <div style={{ marginTop: 10 }}>
-            <span className="chip">{platform} link detected</span>
-          </div>
-        )}
+      <div className="wrap">
+        {/* HERO */}
+        <section className="hero">
+          <h1>Video Downloader</h1>
+          <p className="tagline">Free. No signup. Download now.</p>
+          <p className="tagline-sub">
+            YouTube, Facebook, X and TikTok — long videos &amp; reels
+          </p>
 
-        <label className="private-toggle">
-          <input
-            type="checkbox"
-            checked={privateMode}
-            onChange={(e) => setPrivateMode(e.target.checked)}
-          />
-          🔒 Private / group video mode (needs your login cookies)
-        </label>
-
-        {privateMode && (
-          <div className="private-box">
-            <p>
-              Private videos download through <b>your own session</b> — paste
-              your login cookies below. Used for this one download only, then
-              deleted. Nothing is stored.
-            </p>
-            <textarea
-              placeholder="Paste your cookies here (Netscape cookies.txt format)…"
-              value={cookies}
-              onChange={(e) => setCookies(e.target.value)}
-              spellCheck={false}
+          <div className="fused">
+            <input
+              ref={inputRef}
+              type="text"
+              placeholder="Paste your link here..."
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              onPaste={handlePaste}
+              onKeyDown={(e) => e.key === "Enter" && fetchInfo()}
             />
-            <details className="howto">
-              <summary>How do I get my cookies?</summary>
-              <ol>
-                <li>
-                  Install the free <b>“Get cookies.txt LOCALLY”</b> browser
-                  extension (Chrome / Edge / Firefox).
-                </li>
-                <li>
-                  Log in to <b>facebook.com</b> (or <b>youtube.com</b>) and
-                  open the video page.
-                </li>
-                <li>
-                  Click the extension icon → <b>Export</b> → copy everything.
-                </li>
-                <li>Paste it above, then press Download.</li>
-              </ol>
-            </details>
+            <button className="paste-chip" onClick={pasteFromClipboard}>
+              📋 Paste
+            </button>
+            <button
+              className="go-btn"
+              onClick={() => fetchInfo()}
+              disabled={busy}
+            >
+              {busy ? (
+                <>
+                  <span className="spinner dark" /> Loading…
+                </>
+              ) : (
+                "Download"
+              )}
+            </button>
           </div>
+
+          <div className="platforms">
+            {PLATFORMS.map((p) => (
+              <span key={p.name} className="chip">
+                <span className="dot" style={{ background: p.color }} />
+                {p.name}
+              </span>
+            ))}
+            {platform && <span className="chip">✓ {platform} detected</span>}
+          </div>
+
+          <p className="disclaimer">
+            Copyrighted content is not available for download with this tool.
+          </p>
+
+          <div>
+            <label className="private-toggle">
+              <input
+                type="checkbox"
+                checked={privateMode}
+                onChange={(e) => setPrivateMode(e.target.checked)}
+              />
+              🔒 Private / group video mode (needs your login cookies)
+            </label>
+          </div>
+
+          {privateMode && (
+            <div className="private-box">
+              <p>
+                Private videos download through <b>your own session</b> —
+                paste your login cookies below. Used for this one download
+                only, then deleted. Nothing is stored.
+              </p>
+              <textarea
+                placeholder="Paste your cookies here (Netscape cookies.txt format)…"
+                value={cookies}
+                onChange={(e) => setCookies(e.target.value)}
+                spellCheck={false}
+              />
+              <details className="howto">
+                <summary>How do I get my cookies?</summary>
+                <ol>
+                  <li>
+                    Install the free <b>“Get cookies.txt LOCALLY”</b> browser
+                    extension (Chrome / Edge / Firefox).
+                  </li>
+                  <li>
+                    Log in to <b>facebook.com</b> (or <b>youtube.com</b>) and
+                    open the video page.
+                  </li>
+                  <li>
+                    Click the extension icon → <b>Export</b> → copy everything.
+                  </li>
+                  <li>Paste it above, then press Download.</li>
+                </ol>
+              </details>
+            </div>
+          )}
+
+          {error && <div className="error">⚠️ {error}</div>}
+        </section>
+
+        {/* RESULT */}
+        {info && (
+          <section className="card">
+            <div className="result-head">
+              {info.thumbnail && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  className="thumb"
+                  src={info.thumbnail}
+                  alt="Video thumbnail"
+                />
+              )}
+              <div>
+                <h3>{info.title}</h3>
+                <div className="meta">
+                  {[info.uploader, formatDuration(info.duration)]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </div>
+              </div>
+            </div>
+
+            {note && <div className="note">⚠️ {note}</div>}
+
+            <h3 className="sect">Fast Download</h3>
+            {FAST_ROWS.map((q) => qualityRow(q, "fast"))}
+
+            <h3 className="sect">HD Downloads</h3>
+            {HD_ROWS.map((q) => qualityRow(q, "hd"))}
+
+            {downloading && (
+              <div className="bar">
+                <div style={{ width: `${progress}%` }} />
+              </div>
+            )}
+            {done && (
+              <div className="done-note">
+                ✅ Done! Your file should be saving now — check your downloads
+                folder.
+              </div>
+            )}
+          </section>
         )}
 
-        {error && <div className="error">⚠️ {error}</div>}
-      </section>
-
-      {/* RESULT */}
-      {info && (
-        <section className="card">
-          <div className="result">
-            {info.thumbnail && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                className="thumb"
-                src={info.thumbnail}
-                alt="Video thumbnail"
-              />
-            )}
-            <div className="result-info">
-              <h3>{info.title}</h3>
-              <div className="meta">
-                {[info.uploader, formatDuration(info.duration)]
-                  .filter(Boolean)
-                  .join(" · ")}
-              </div>
-              {note && <div className="note">⚠️ {note}</div>}
-              <div className="qualities">
-                {QUALITIES.map((q) => {
-                  const active = dlQuality === q.key && downloading;
-                  return (
-                    <button
-                      key={q.key}
-                      className={`qbtn ${active ? "active" : ""}`}
-                      onClick={() => startDownload(q.key)}
-                      disabled={downloading}
-                    >
-                      {active ? (
-                        <>
-                          <span className="spinner" /> {progress}%
-                        </>
-                      ) : (
-                        <>⬇ {q.label}</>
-                      )}
-                      <small>{q.sub}</small>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {downloading && (
-                <div className="progress-wrap">
-                  <div className="bar">
-                    <div style={{ width: `${progress}%` }} />
-                  </div>
-                </div>
-              )}
-              {done && (
-                <div className="done-note">
-                  ✅ Done! Your file should be saving now — check your
-                  downloads folder.
-                </div>
-              )}
+        {/* HOW TO */}
+        <section className="section">
+          <h2>How to Download Videos?</h2>
+          <p className="sub">Get any video in 3 simple steps</p>
+          <div className="steps">
+            <div className="step">
+              <span className="num">1</span>
+              <b>Copy the link</b>
+              <span>
+                Open the video on YouTube, Facebook, X or TikTok and copy its
+                link.
+              </span>
+            </div>
+            <div className="step">
+              <span className="num">2</span>
+              <b>Paste the link</b>
+              <span>
+                Paste it into the box above — or hit the Paste button and it
+                loads automatically.
+              </span>
+            </div>
+            <div className="step">
+              <span className="num">3</span>
+              <b>Download the video</b>
+              <span>
+                Pick a quality and hit Download. The file saves straight to
+                your device.
+              </span>
             </div>
           </div>
         </section>
-      )}
 
-      {/* FEATURES */}
-      <section className="card">
-        <h2>What you can download</h2>
-        <div className="grid">
-          <div className="feat">
-            <div className="icon">🎬</div>
-            <b>Long videos</b>
-            <span>
-              Full-length YouTube videos, Facebook watch videos, X &amp;
-              TikTok uploads.
-            </span>
+        {/* WHY */}
+        <section className="section">
+          <h2 className="red">Why Use VidFetch?</h2>
+          <p className="sub">One downloader for everything you watch</p>
+          <div className="grid">
+            <div className="feat">
+              <span className="tile">🎬</span>
+              <b>Long videos</b>
+              <span>
+                Full-length videos from YouTube, Facebook, X and TikTok.
+              </span>
+            </div>
+            <div className="feat">
+              <span className="tile">📱</span>
+              <b>Reels &amp; Shorts</b>
+              <span>
+                Short clips and reels download just as easily as long videos.
+              </span>
+            </div>
+            <div className="feat">
+              <span className="tile">🎞️</span>
+              <b>HD quality</b>
+              <span>
+                Up to 1080p Full HD video, plus best-quality options.
+              </span>
+            </div>
+            <div className="feat">
+              <span className="tile">⚡</span>
+              <b>Fast downloading</b>
+              <span>
+                Paste, pick, download — no waiting rooms, no countdowns.
+              </span>
+            </div>
+            <div className="feat">
+              <span className="tile">🔒</span>
+              <b>Private videos</b>
+              <span>
+                Members-only Facebook groups and private videos via your own
+                login cookies.
+              </span>
+            </div>
+            <div className="feat">
+              <span className="tile">📲</span>
+              <b>Phone &amp; PC</b>
+              <span>
+                Works on Android, iPhone and desktop — nothing to install.
+              </span>
+            </div>
           </div>
-          <div className="feat">
-            <div className="icon">📱</div>
-            <b>Reels &amp; Shorts</b>
-            <span>
-              Facebook reels, YouTube Shorts, TikTok clips — paste the link,
-              same flow.
-            </span>
-          </div>
-          <div className="feat">
-            <div className="icon">🔒</div>
-            <b>Private &amp; group videos</b>
-            <span>
-              Members-only Facebook groups and private videos, via your own
-              login cookies.
-            </span>
-          </div>
-          <div className="feat">
-            <div className="icon">🎵</div>
-            <b>MP3 audio</b>
-            <span>
-              Extract just the audio from any supported video in one click.
-            </span>
-          </div>
-        </div>
-      </section>
+        </section>
 
-      {/* FAQ */}
-      <section className="card faq">
-        <h2>Good to know</h2>
-        <details open>
-          <summary>Is it really free? Do I need an account?</summary>
-          <p>
-            Yes — 100% free, no signup, no credits, no watermarks. Just paste
-            a link and download. Private Facebook videos are the only case
-            that needs your own login cookies (Private mode above).
-          </p>
-        </details>
-        <details>
-          <summary>How do private / group Facebook videos work?</summary>
-          <p>
-            Turn on <b>Private mode</b> and paste your Facebook login cookies
-            (see the how-to above). The download runs through your own
-            session, so it can fetch anything you&apos;re already able to
-            watch. Only download videos you have the right to save.
-          </p>
-        </details>
-        <details>
-          <summary>YouTube says “sign in to confirm you’re not a bot”</summary>
-          <p>
-            YouTube blocks many server IPs. If the site owner has added the
-            server&apos;s own YouTube session, you&apos;ll never see this —
-            otherwise, export your YouTube cookies while logged in (same
-            “Get cookies.txt LOCALLY” extension), enable Private mode, paste
-            them, and retry.
-          </p>
-        </details>
-        <details>
-          <summary>Where do my files and cookies go?</summary>
-          <p>
-            Downloads are processed on the server and streamed straight to
-            your browser. Cookies live only in a temporary file for that one
-            download and are deleted immediately after. Files auto-delete from
-            the server after 30 minutes.
-          </p>
-        </details>
-      </section>
+        {/* FAQ */}
+        <section className="section faq">
+          <h2 className="red">Frequently Asked Questions</h2>
+          <p className="sub">Everything you need to know</p>
+          <details open>
+            <summary>
+              Is VidFetch really free? <span className="pm" />
+            </summary>
+            <p>
+              Yes — 100% free, no signup, no credits, no watermarks. Just paste
+              a link and download. Private Facebook videos are the only case
+              that needs your own login cookies.
+            </p>
+          </details>
+          <details>
+            <summary>
+              Which sites are supported? <span className="pm" />
+            </summary>
+            <p>
+              YouTube (videos &amp; Shorts), Facebook (videos, reels, private
+              &amp; group videos), X (Twitter) videos, and TikTok videos.
+            </p>
+          </details>
+          <details>
+            <summary>
+              How do private / group Facebook videos work?{" "}
+              <span className="pm" />
+            </summary>
+            <p>
+              Turn on Private mode and paste your Facebook login cookies (see
+              the how-to above). The download runs through your own session,
+              so it can fetch anything you&apos;re already able to watch.
+              Only download videos you have the right to save.
+            </p>
+          </details>
+          <details>
+            <summary>
+              Can I download as MP3? <span className="pm" />
+            </summary>
+            <p>
+              Yes — choose the “Audio MP3” row under Fast Download and
+              you&apos;ll get just the audio track.
+            </p>
+          </details>
+          <details>
+            <summary>
+              Is it safe to use? <span className="pm" />
+            </summary>
+            <p>
+              Yes. Downloads are processed on the server and streamed straight
+              to your browser. Cookies live only in a temporary file for one
+              download and are deleted immediately after; files auto-delete
+              after 30 minutes.
+            </p>
+          </details>
+        </section>
 
-      <footer>
-        VidFetch is a personal utility. Only download videos you own or have
-        permission to save — respect creators&apos; rights and each
-        platform&apos;s terms of service.
-        <br />© 2026 VidFetch · Free forever, no signup.
-      </footer>
-    </div>
+        <footer>
+          <b>VidFetch</b> — Free Video Downloader
+          <br />
+          Only download videos you own or have permission to save. Respect
+          creators&apos; rights and each platform&apos;s terms of service.
+          <br />© 2026 VidFetch · Free forever, no signup.
+        </footer>
+      </div>
+    </>
   );
 }

@@ -54,6 +54,46 @@ export interface VideoInfo {
   webpageUrl: string;
   /** true when YouTube bot-checks forced the limited (360p) fallback client */
   limited?: boolean;
+  /** Approx bytes per quality tier, when the extractor reports them */
+  sizes?: Partial<Record<QualityKey, number>>;
+}
+
+/** Approx download size per quality tier from the extractor's format list. */
+function pickSizes(formats: any[]): Partial<Record<QualityKey, number>> {
+  const out: Partial<Record<QualityKey, number>> = {};
+  if (!Array.isArray(formats) || !formats.length) return out;
+  const sz = (f: any): number => {
+    const v = f.filesize ?? f.filesize_approx;
+    return typeof v === "number" && v > 0 ? v : 0;
+  };
+  const videos = formats.filter(
+    (f) => typeof f.height === "number" && f.height > 0 && sz(f) > 0
+  );
+  const audios = formats.filter(
+    (f) =>
+      (f.vcodec === "none" || f.height == null) &&
+      f.acodec &&
+      f.acodec !== "none" &&
+      sz(f) > 0
+  );
+  const bestUnder = (h: number): number => {
+    const cands = videos
+      .filter((f) => f.height <= h)
+      .sort((a, b) => b.height - a.height || sz(b) - sz(a));
+    return cands.length ? sz(cands[0]) : 0;
+  };
+  const put = (k: QualityKey, v: number) => {
+    if (v > 0) out[k] = v;
+  };
+  put("best", bestUnder(4320));
+  put("q1080", bestUnder(1080));
+  put("q720", bestUnder(720));
+  put("q480", bestUnder(480));
+  if (audios.length) {
+    audios.sort((a, b) => (b.abr || 0) - (a.abr || 0) || sz(b) - sz(a));
+    put("audio", sz(audios[0]));
+  }
+  return out;
 }
 
 function isYouTube(url: string): boolean {
@@ -194,6 +234,7 @@ export async function getVideoInfo(
         thumbnail: j.thumbnail || null,
         webpageUrl: j.webpage_url || url,
         limited: i > 0,
+        sizes: pickSizes(j.formats),
       };
     }
     lastErr = stderrTail(stderr);
